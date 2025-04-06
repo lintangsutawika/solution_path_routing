@@ -11,23 +11,13 @@ from routing.utils import (
     postprocess_routing
     )
 
-from yeval.metrics import math_eval
-
-# @register_task("gsm8k_direct_nl_first_A")
-# @register_task("gsm8k_direct_nl_first_B")
-# @register_task("gsm8k_direct_nl_first_C")
-# @register_task("gsm8k_direct_nl_first_D")
-# @register_task("gsm8k_direct_pl_first_A")
-# @register_task("gsm8k_direct_pl_first_B")
-# @register_task("gsm8k_direct_pl_first_C")
-# @register_task("gsm8k_direct_pl_first_D")
-
 @register_task("gsm8k_routing")
 class GSM8KBaseRoutingTask(GSM8KTask):
     input_text=lambda x: x['question']
     output_text=lambda x: "programming language"
     sampling_args={"stop": ["\n\n", "\n"]}
     evaluation={"accuracy": match_routing}
+    logging=log_token_usage
 
 # @register_task("gsm8k_solve")
 # class GSM8KRoutingStage(GSM8KTask):
