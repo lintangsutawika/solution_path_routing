@@ -1,6 +1,6 @@
 from yeval.prompt import YevalPrompt, register_prompt
 
-@register_prompt("direct_00")
+@register_prompt("direct_NL_00")
 class SelectNL00(YevalPrompt):
     user_message=lambda x: f"""\
 Choose only one way to solve the problem: by thinking step-by-step OR writing a program as a way to solve a given task. Do NOT use both:
@@ -9,7 +9,7 @@ Choose only one way to solve the problem: by thinking step-by-step OR writing a 
 {x}
 """
 
-@register_prompt("direct_01")
+@register_prompt("direct_PL_00")
 class SelectPL00(YevalPrompt):
     user_message=lambda x: f"""\
 Choose only one way to solve the problem: by thinking step-by-step OR writing a program as a way to solve a given task. Do NOT use both:
@@ -18,7 +18,7 @@ Choose only one way to solve the problem: by thinking step-by-step OR writing a 
 {x}
 """
 
-@register_prompt("direct_02")
+@register_prompt("direct_NL_01")
 class SelectNL00(YevalPrompt):
     system_message=lambda x: f"""\
 {x}
@@ -27,7 +27,7 @@ Choose only one way to solve the problem: by thinking step-by-step OR writing a 
 2. Writing a program: DIRECTLY and ONLY write a program with the PYTHON programming language. The function must be named solution() without any input arguments. At the end, you MUST return an single value.
 """
 
-@register_prompt("direct_03")
+@register_prompt("direct_PL_01")
 class SelectPL00(YevalPrompt):
     system_message=lambda x: f"""\
 {x}

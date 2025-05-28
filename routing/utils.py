@@ -2,6 +2,8 @@ import re
 import sys
 import subprocess
 
+import numpy as np
+
 def match_routing(prediction, ground_truth):
     prediction = prediction.strip().lower()
     ground_truth = ground_truth.strip().lower()
@@ -40,16 +42,27 @@ def is_runnable_code(text_string, answer_expr='solution()', time_out=10):
     else:
         return False
 
+def extract_bold_text(text):
+    return re.findall(r'\*\*(.*?)\*\*', text)
+
 def extract_answer(answer: str):
     try:
         extracted_answer = answer.split('####')[-1].strip()
+        answer = answer.strip()
         if extracted_answer == answer:
             # match = re.search(r"answer is(\w)", answer)
             # match = re.search(r"(?i)(?<=answer is ).*", answer)
-            match = re.search(r"(?i)(?<=answer is[:\s]).*", answer)
+            # match = re.search(r"(?i)(?<=answer is[:\s]).*", answer)
+            match = re.search(r'answer is:?\s*(.*)', answer, re.IGNORECASE)
             
             if match:
-                return match.group(0)
+                # return match.group(0)
+                answer_string = match.group(1).strip()
+                extract_string = extract_bold_text(answer_string)
+                if len(extract_string) > 0:
+                    return extract_string[0].strip()
+                else:
+                    return answer_string.strip()
             else:
                 return answer
         return extracted_answer
@@ -80,3 +93,8 @@ def postprocess_routing(x, state):
         except:
             pass
     return x, state
+
+def log_top_n_tokens(state):
+    for choice in state['choices']:
+        top_n_tokens = [token["token"] for token in choice['logprobs']['content'][0]['top_logprobs']]
+        return {"top_n_tokens": top_n_tokens}

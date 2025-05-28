@@ -11,7 +11,7 @@ class SelectPL00(YevalPrompt):
 
 @register_prompt("solve_NL_01")
 class SelectNL00(YevalPrompt):
-    user_message=lambda x: f"{x}\n\nGive step-by-step reasoning about how to solve the question. Then output the answer after `Answer:`."
+    user_message=lambda x: f"{x}\n\nGive step by step reasoning about how to solve the question. Then output the answer after `Answer:`."
 
 @register_prompt("solve_PL_01")
 class SelectPL00(YevalPrompt):
@@ -19,7 +19,7 @@ class SelectPL00(YevalPrompt):
 
 @register_prompt("solve_NL_02")
 class SelectNL00(YevalPrompt):
-    user_message=lambda x: f"{x}\n\nFirst give step-by-step reasoning about how to solve the question. Then output the answer after `Answer:`."
+    user_message=lambda x: f"{x}\n\nFirst give step by step reasoning about how to solve the question. Then output the answer after `Answer:`."
 
 @register_prompt("solve_PL_02")
 class SelectPL00(YevalPrompt):
