@@ -1,0 +1,7 @@
+{
+    "n_samples": 100,
+    "avg_accuracy": 0.71,
+    "avg_input_tokens": 138.84,
+    "avg_output_tokens": 21.87,
+    "avg_total_tokens": 160.71
+}
