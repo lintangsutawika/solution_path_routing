@@ -59,14 +59,15 @@ if __name__ == "__main__":
         model_prefix=args.model_prefix,
         task_prefix=args.task_prefix,
         use_gcs=args.use_gcs,
-        fs_kwargs = {k: v for kv in args.fs_kwargs.split(",") if kv for k, v in [kv.split("=")]}
-        # fs_kwargs={
-        #     "project":'cmu-gpu-cloud-flame',
-        #     "token":'/home/lsutawik/.config/gcloud/application_default_credentials.json'
-        #     }
+        # fs_kwargs = {k: v for kv in args.fs_kwargs.split(",") if kv for k, v in [kv.split("=")]}
+        fs_kwargs={
+            "project":'cmu-gpu-cloud-flame',
+            "token":'/home/lsutawik/.config/gcloud/application_default_credentials.json'
+            }
         )
 
-    for task in df["task"].unique():
+    # for task in df["task"].unique():
+
         
 
 
