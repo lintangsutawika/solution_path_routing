@@ -18,54 +18,64 @@ from transformers import (
 
 def compute_loss_func(outputs, labels, **kwargs):
     
-    predictions = outputs[0]
+    bs, m = labels.shape
 
-    bs, *_ = predictions.shape
-    # label example [1, 4, 3, 2, 0]
-    # Lower mean higher rank
-    def _loss_fn(predictions, labels):
-        m = len(labels)
-        y = m - labels
-        gamma = torch.FloatTensor([random.random() for _ in range(len(labels))]).to(predictions.device)
-        Z_phi = sum([2**y[i] - gamma[i] for i in range(len(labels))])
+    ## Relevance from 1 and decreasing
+    # y = (m - labels)/m
+    # Relevance follows a power law
+    y = 1 / (labels + 1)
+    gamma = torch.rand(y.shape).to(y.device)
 
-        loss = torch.tensor(0.0, device=predictions.device)
-        phi = (2**y - gamma) / Z_phi
-        rho = predictions/sum(predictions)
+    rho = outputs.logits
 
-        loss = F.cross_entropy(phi, rho)
-        return loss/m
+    ## From Literature
+    # phi = (2**y-gamma)/(2**y-gamma).sum(dim=-1, keepdim=True)
+    # Just a simple normalization
+    phi = y/y.sum(dim=-1, keepdim=True)
 
-    loss = torch.tensor(0.0, device=predictions.device)
-    for i in range(bs):
-        loss += _loss_fn(predictions[i], labels[i])
+    loss = F.cross_entropy(rho, phi, reduction='sum')/(bs*m)
 
-    return loss/bs
+    return loss
 
 
 def compute_metrics(pred):
 
+    topk = 3
+    ndcg = 0.0
+    mrr = 0.0
+    bs = 1
     for prediction, label in zip(pred.predictions, pred.label_ids):
-        y = [len(label) - i for i in label]
+        # mrr = sum([1/(pi_f[i]+1) for i in range(m) if y[i] > 0]) / m
+
+        m = len(label)
+        # Relevance of 1 for top 3 items, 0 for others
+        y = (label < topk).astype(np.float32)
+        # y = (m - label)/m
 
         if isinstance(prediction, torch.Tensor):
             prediction = prediction.tolist()
 
-        sorted_prediction = sorted(prediction)
-        pi_f = [sorted_prediction.index(x) +1 for x in prediction]
-        dcg_f = sum([(2**y[i]-1)/np.log2(pi_f[i]+1) for i in range(len(label))])
+        sorted_prediction = sorted(prediction, reverse=True)
+        pi_f = np.asarray([sorted_prediction.index(x) + 1 for x in prediction])
+        dcg_f = sum([(2**y[i]-1)/np.log2(pi_f[i]+1) for i in range(m)])
+
+        mrr += sum(1/pi_f[:1])
 
         if isinstance(label, torch.Tensor):
             label = label.tolist()
 
         pi_y = [l + 1 for l in  label]
-        dcg_y = sum([(2**y[i]-1)/np.log2(pi_y[i]+1) for i in range(len(label))])
+        dcg_y = sum([(2**y[i]-1)/np.log2(pi_y[i]+1) for i in range(m)])
 
         # Calculate NDCG
-        ndcg = dcg_f / dcg_y
+        ndcg += dcg_f / dcg_y
+        bs += 1
 
     return {
-        'NDCG': ndcg,
+        'NDCG': ndcg/bs,
+        'MRR': mrr/bs,
+        'NDCG+MRR': (ndcg + mrr)/2/bs,
+        'bs': bs,
     }
 
 def main(args):
@@ -87,15 +97,18 @@ def main(args):
 
     # Prepare datasets for training
     train_dataset = tokenized_datasets["train"] # .shuffle(seed=args.seed).select(range(args.train_subset_size))
-    test_dataset = tokenized_datasets["test"] # .shuffle(seed=args.seed).select(range(args.test_subset_size))
+    test_dataset = tokenized_datasets["test"].select(range(32)) # .shuffle(seed=args.seed).select(range(args.test_subset_size))
 
     print(train_dataset)
 
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy="steps",
+        # eval_steps=32,
+        eval_steps=8,
+        save_steps=32,
+        # save_strategy="epoch",
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
@@ -104,8 +117,10 @@ def main(args):
         weight_decay=args.weight_decay,
         logging_dir=args.logging_dir,
         logging_steps=args.logging_steps,
+        eval_on_start=True,
         load_best_model_at_end=True,
-        metric_for_best_model="NDCG",
+        # metric_for_best_model="NDCG",
+        metric_for_best_model="NDCG+MRR",
         greater_is_better=True,
         # use_liger_kernel=True,
     )
@@ -138,8 +153,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Random seed for shuffling")
     parser.add_argument("--output_dir", type=str, default="./model_checkpoints/", help="Directory for output results")
     parser.add_argument("--logging_dir", type=str, default="./logs", help="Directory for logging")
-    parser.add_argument("--logging_steps", type=int, default=10, help="Logging steps")
-    parser.add_argument("--learning_rate", type=float, default=2e-5, help="Learning rate")
+    parser.add_argument("--logging_steps", type=int, default=1, help="Logging steps")
+    parser.add_argument("--learning_rate", type=float, default=5e-5, help="Learning rate")
     parser.add_argument("--train_batch_size", type=int, default=4, help="Training batch size")
     parser.add_argument("--eval_batch_size", type=int, default=16, help="Evaluation batch size")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of gradient accumulation steps")
