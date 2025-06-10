@@ -17,7 +17,7 @@ from transformers import (
     )
 
 def compute_loss_func(outputs, labels, **kwargs):
-    
+
     bs, m = labels.shape
 
     ## Relevance from 1 and decreasing
@@ -26,14 +26,10 @@ def compute_loss_func(outputs, labels, **kwargs):
     y = 1 / (labels + 1)
     gamma = torch.rand(y.shape).to(y.device)
 
+    # From Literature
+    phi = (2**y-gamma)/(2**y-gamma).sum(dim=-1, keepdim=True)
     rho = outputs.logits
-
-    ## From Literature
-    # phi = (2**y-gamma)/(2**y-gamma).sum(dim=-1, keepdim=True)
-    # Just a simple normalization
-    phi = y/y.sum(dim=-1, keepdim=True)
-
-    loss = F.cross_entropy(rho, phi, reduction='sum')/(bs*m)
+    loss = F.cross_entropy(rho, phi, reduction='mean')/m
 
     return loss
 
@@ -43,7 +39,7 @@ def compute_metrics(pred):
     topk = 3
     ndcg = 0.0
     mrr = 0.0
-    bs = 1
+    bs = 0
     for prediction, label in zip(pred.predictions, pred.label_ids):
         # mrr = sum([1/(pi_f[i]+1) for i in range(m) if y[i] > 0]) / m
 
@@ -56,15 +52,15 @@ def compute_metrics(pred):
             prediction = prediction.tolist()
 
         sorted_prediction = sorted(prediction, reverse=True)
-        pi_f = np.asarray([sorted_prediction.index(x) + 1 for x in prediction])
+        pi_f = np.asarray([prediction.tolist().index(x) + 1 for x in sorted_prediction])
         dcg_f = sum([(2**y[i]-1)/np.log2(pi_f[i]+1) for i in range(m)])
 
-        mrr += sum(1/pi_f[:1])
+        mrr += 1/pi_f[label.tolist().index(0)]
 
         if isinstance(label, torch.Tensor):
             label = label.tolist()
 
-        pi_y = [l + 1 for l in  label]
+        pi_y = np.asarray([l + 1 for l in label])
         dcg_y = sum([(2**y[i]-1)/np.log2(pi_y[i]+1) for i in range(m)])
 
         # Calculate NDCG
@@ -75,12 +71,12 @@ def compute_metrics(pred):
         'NDCG': ndcg/bs,
         'MRR': mrr/bs,
         'NDCG+MRR': (ndcg + mrr)/2/bs,
-        'bs': bs,
     }
 
 def main(args):
     # Load dataset
     dataset = load_dataset("json", data_dir=args.data_dir)
+    # dataset = load_dataset("Yelp/yelp_review_full")
 
     # Load tokenizer and model
     model_name = args.model_name
@@ -96,8 +92,8 @@ def main(args):
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # Prepare datasets for training
-    train_dataset = tokenized_datasets["train"] # .shuffle(seed=args.seed).select(range(args.train_subset_size))
-    test_dataset = tokenized_datasets["test"].select(range(32)) # .shuffle(seed=args.seed).select(range(args.test_subset_size))
+    train_dataset = tokenized_datasets["train"].shuffle(seed=args.seed).select(range(args.train_subset_size))
+    test_dataset = tokenized_datasets["test"].shuffle(seed=args.seed).select(range(args.test_subset_size))
 
     print(train_dataset)
 
@@ -119,6 +115,7 @@ def main(args):
         logging_steps=args.logging_steps,
         eval_on_start=True,
         load_best_model_at_end=True,
+        save_total_limit=1,
         # metric_for_best_model="NDCG",
         metric_for_best_model="NDCG+MRR",
         greater_is_better=True,
@@ -140,7 +137,7 @@ def main(args):
     trainer.train()
 
     # Save the model
-    model.save_pretrained(args.output_dir)
+    trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
 if __name__ == "__main__":
@@ -148,8 +145,8 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, required=True, help="Directory containing the dataset")
     parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", help="Pretrained model name")
     parser.add_argument("--num_labels", type=int, default=10, help="Number of labels for classification")
-    # parser.add_argument("--train_subset_size", type=int, default=2000, help="Subset size for training")
-    # parser.add_argument("--test_subset_size", type=int, default=500, help="Subset size for testing")
+    parser.add_argument("--train_subset_size", type=int, default=8192, help="Subset size for training")
+    parser.add_argument("--test_subset_size", type=int, default=128, help="Subset size for testing")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for shuffling")
     parser.add_argument("--output_dir", type=str, default="./model_checkpoints/", help="Directory for output results")
     parser.add_argument("--logging_dir", type=str, default="./logs", help="Directory for logging")
