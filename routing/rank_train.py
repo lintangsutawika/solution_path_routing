@@ -41,12 +41,10 @@ def compute_metrics(pred):
     mrr = 0.0
     bs = 0
     for prediction, label in zip(pred.predictions, pred.label_ids):
-        # mrr = sum([1/(pi_f[i]+1) for i in range(m) if y[i] > 0]) / m
 
         m = len(label)
         # Relevance of 1 for top 3 items, 0 for others
         y = (label < topk).astype(np.float32)
-        # y = (m - label)/m
 
         if isinstance(prediction, torch.Tensor):
             prediction = prediction.tolist()
@@ -54,8 +52,6 @@ def compute_metrics(pred):
         sorted_prediction = sorted(prediction, reverse=True)
         pi_f = np.asarray([prediction.tolist().index(x) + 1 for x in sorted_prediction])
         dcg_f = sum([(2**y[i]-1)/np.log2(pi_f[i]+1) for i in range(m)])
-
-        mrr += 1/pi_f[label.tolist().index(0)]
 
         if isinstance(label, torch.Tensor):
             label = label.tolist()
@@ -65,6 +61,7 @@ def compute_metrics(pred):
 
         # Calculate NDCG
         ndcg += dcg_f / dcg_y
+        mrr += 1/pi_f[label.tolist().index(0)]
         bs += 1
 
     return {
@@ -76,13 +73,13 @@ def compute_metrics(pred):
 def main(args):
     # Load dataset
     dataset = load_dataset("json", data_dir=args.data_dir)
-    # dataset = load_dataset("Yelp/yelp_review_full")
 
     # Load tokenizer and model
-    model_name = args.model_name
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=args.num_labels)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
+
+    model_name = args.model_name
+    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=args.num_labels)
     model.config.pad_token_id=tokenizer.pad_token_id
 
     # Tokenize dataset
@@ -101,10 +98,9 @@ def main(args):
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         eval_strategy="steps",
-        # eval_steps=32,
-        eval_steps=8,
+        eval_steps=32,
+        save_strategy="steps",
         save_steps=32,
-        # save_strategy="epoch",
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
@@ -116,10 +112,8 @@ def main(args):
         eval_on_start=True,
         load_best_model_at_end=True,
         save_total_limit=1,
-        # metric_for_best_model="NDCG",
         metric_for_best_model="NDCG+MRR",
         greater_is_better=True,
-        # use_liger_kernel=True,
     )
 
     # Define Trainer
