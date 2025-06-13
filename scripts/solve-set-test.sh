@@ -67,7 +67,6 @@ vllm serve $MODEL \
     --pipeline_parallel_size ${PP_SIZE} \
     --tensor_parallel_size ${TP_SIZE} \
     --enable_prefix_caching \
-    --guided-decoding-backend=lm-format-enforcer \
     --distributed-executor-backend mp > o.txt &
 
 for ROUTE in "${ROUTE_LIST[@]}"
