@@ -78,16 +78,19 @@ do
         do
             PROMPT=t//solve${ROUTE}${NUM}
             TASK_PROMPT=${TASK}${PROMPT}
-            yeval \
-                --model $MODEL \
-                --sample_args "temperature=0.6,top_p=0.9" \
-                --task $TASK_PROMPT \
-                --include_path routing/ \
-                --api_base "http://localhost:${PORT}/v1" \
-                --run_name ${MODEL}:${TASK}:${ROUTE}:${NUM} \
-                --trust_remote_code \
-                --output_path ${SAVE_PATH}/solve_set_train/ $OTHER_ARGS \
-                $SYSTEM_ARGS \
+            for I in {0..7}
+            do
+                yeval \
+                    --model $MODEL \
+                    --sample_args "temperature=0.6,top_p=0.9" \
+                    --task $TASK_PROMPT \
+                    --include_path routing/ \
+                    --api_base "http://localhost:${PORT}/v1" \
+                    --run_name ${MODEL}:${TASK}:${ROUTE}:${NUM}:${I} \
+                    --trust_remote_code \
+                    --output_path ${SAVE_PATH}/solve_set_test/ $OTHER_ARGS \
+                    $SYSTEM_ARGS
+            done
         done
     done
 done
