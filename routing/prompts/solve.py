@@ -15,10 +15,10 @@ class SolvePL00(YevalTask):
     postprocessor=lambda x: is_runnable_code(x)
     sampling_args={
         "stop": ["```\n"],
-        "extra_body": {
-            "guided_regex": r"Let's write a Python program to solve it.\n```python\ndef solution\(\):\n(.*?)```",
-            "include_stop_str_in_output": True,
-            },
+        # "extra_body": {
+        #     "guided_regex": r"Let's write a Python program to solve it.\n```python\ndef solution\(\):\n(.*?)```",
+        #     "include_stop_str_in_output": True,
+        #     },
     }
     logging=log_token_usage
 
@@ -27,10 +27,10 @@ class SolvePL01(SolvePL00):
     user_message=lambda x: f"{x}\n\nSolve this by ONLY writing a function called `solution()` that returns a single value to solve the question."
     sampling_args={
         "stop": ["```\n"],
-        "extra_body": {
-            "guided_regex": r"Let's write a code to solve this.\n```python\ndef solution\(\):\n(.*?)```",
-            "include_stop_str_in_output": True,
-            },
+        # "extra_body": {
+        #     "guided_regex": r"Let's write a code to solve this.\n```python\ndef solution\(\):\n(.*?)```",
+        #     "include_stop_str_in_output": True,
+        #     },
     }
 
 @register_task("solvePL02")
@@ -38,10 +38,21 @@ class SolvePL02(SolvePL00):
     user_message=lambda x: f"{x}\n\nWrite ONLY a program. The function must be named solution() without any input arguments and must return a single value."
     sampling_args={
         "stop": ["```\n"],
-        "extra_body": {
-            "guided_regex": r"Let's solve this with Python.\n```python\ndef solution\(\):\n(.*?)```",
-            "include_stop_str_in_output": True,
-            },
+        # "extra_body": {
+        #     "guided_regex": r"Let's solve this with Python.\n```python\ndef solution\(\):\n(.*?)```",
+        #     "include_stop_str_in_output": True,
+        #     },
+    }
+
+@register_task("solvePL03")
+class SolvePL02(SolvePL00):
+    user_message=lambda x: f"{x}\n\Derive the answer by writing ONLY a function named `solution()` without any input arguments that returns the answer."
+    sampling_args={
+        "stop": ["```\n"],
+        # "extra_body": {
+        #     "guided_regex": r"Let's solve this with Python.\n```python\ndef solution\(\):\n(.*?)```",
+        #     "include_stop_str_in_output": True,
+        #     },
     }
 
 @register_task("solveNL00")
@@ -57,4 +68,8 @@ class SolveNL01(SolveNL00):
 @register_task("solveNL02")
 class SolveNL02(SolveNL00):
     user_message=lambda x: f"{x}"+"\nFirst give step by step reasoning, then write the answer within \\boxed{}."
+
+@register_task("solveNL03")
+class SolveNL02(SolveNL00):
+    user_message=lambda x: f"{x}"+"\nDerive the answer by logically thinking step-by-step. Finally, write the answer within \\boxed{}."
 
