@@ -2,7 +2,7 @@
 #SBATCH --job-name=solve
 #SBATCH --output=logs/%j.out
 #SBATCH --partition=preempt
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:L40S:8
 #SBATCH --nodes=1
 #SBATCH --time=2-00:00:00
 #SBATCH --mem=0
@@ -109,8 +109,8 @@ PP_SIZE="${4:-1}"
 # Use PP_SIZE 2 for >32B Models
 TP_SIZE="${5:-1}"
 # Use TP_SIZE 4 for >32B Models
-ROUTE_LIST=("${6:-${ROUTE_LIST[@]}}")
-TASK_LIST=("${7:-${TASK_LIST[@]}}")
+TASK_LIST=("${6:-${TASK_LIST[@]}}")
+ROUTE_LIST=("${7:-${ROUTE_LIST[@]}}")
 NUM_LIST=("${8:-${NUM_LIST[@]}}")
 
 MAX_TOKEN=4096

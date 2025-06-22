@@ -10,6 +10,8 @@ python routing/ranker.py \
     --model_prefix Qwen-Qwen2.5
 ```
 
+for LAMBDA in 0.1 0.2 0.4 0.8 1.0; do python routing/ranker.py --data_path evals/solve_set_train/ --output_path data/math:${LAMBDA}/ --task_prefix math --model_prefix Qwen-Qwen2.5 --lmbda ${LAMBDA}; done
+
 ## Training Routing Model
 
 ```
