@@ -3,11 +3,53 @@ import fsspec
 import argparse
 import jsonlines
 
+import numpy as np
 import pandas as pd
 
+from functools import partial
 from tqdm import tqdm
 
-def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, fs_kwargs={}):
+label_class = [
+    "Qwen-Qwen2.5-3B-Instruct-PL", # 0
+    "Qwen-Qwen2.5-3B-Instruct-NL", # 1
+    "Qwen-Qwen2.5-7B-Instruct-PL", # 2
+    "Qwen-Qwen2.5-7B-Instruct-NL", # 3
+    "Qwen-Qwen2.5-14B-Instruct-PL",# 4
+    "Qwen-Qwen2.5-14B-Instruct-NL",# 5
+    "Qwen-Qwen2.5-32B-Instruct-PL",# 6
+    "Qwen-Qwen2.5-32B-Instruct-NL",# 7
+    "Qwen-Qwen2.5-72B-Instruct-PL",# 8
+    "Qwen-Qwen2.5-72B-Instruct-NL",# 9
+]
+
+def rank_model_solution_pair(row, lmbda=0.1, score_fn=None):
+
+    row = row.unstack(level=0).reset_index()
+    row["size"] = row["model"].apply(lambda x: int(x.split("-")[2][:-1]))
+    row["compute"] = 2 * row["size"] * row["output_tokens"]
+
+    # row["score"] = row["accuracy"] / (lmbda * np.log10(row["compute"]))
+    if score_fn is not None:
+        row["score"] = score_fn(row)
+    else:
+        # row["score"] = row["accuracy"] / (lmbda * np.log10(row["compute"]))
+        row["score"] = np.log10(1+row["accuracy"]/(row["compute"]**lmbda))
+
+    row.sort_values(by=['score'], ascending=[False], inplace=True)
+    # row.sort_values(by=['accuracy', 'compute'], ascending=[False, True], inplace=True)
+
+    row["pair"] = row["model"] + "-" + row["solve"]
+
+    # return [label_class.index(route_label) for route_label in row["pair"].tolist()]
+    return (
+        [label_class.index(route_label) for route_label in row["pair"].tolist()],
+        row["accuracy"].tolist(),
+        row["compute"].tolist(),
+        )
+
+    # return row["pair"].tolist()
+
+def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, task_name=False, fs_kwargs={}):
 
     if use_gcs:
         fs = fsspec.filesystem('gcs', **fs_kwargs)
@@ -32,6 +74,8 @@ def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, fs_k
             df = pd.DataFrame()
             df = file_df[["idx", "accuracy"]].copy()
             df["output_tokens"] = file_df.apply(lambda x: pd.Series(x['step'][0]['log']['output_tokens']), axis=1)
+            # task_name_prompt = f"Task: {task_name}" else ""
+            # df["text"] = file_df.apply(lambda x: pd.Series(task_name_prompt+x['step'][0]['full_input'][0]['content']), axis=1)
             df["text"] = file_df.apply(lambda x: pd.Series(x['step'][0]['full_input'][0]['content']), axis=1)
             df["task"] = task_name
             df["model"] = model_name
@@ -53,6 +97,8 @@ if __name__ == "__main__":
     args.add_argument("--save_model_path", type=str, default=None, help="Path to save the model.")
     args.add_argument("--fs_kwargs", type=str, default="", help="Comma-separated key=value pairs for filesystem kwargs.")
     args.add_argument("--use_gcs", action="store_true", help="Flag to indicate whether to use Google Cloud Storage.")
+    args.add_argument("--task_name", action="store_true", help="Flag to indicate whether to use Google Cloud Storage.")
+    args.add_argument("--lmbda", type=float, default=0.1, help="Lambda value for ranking score calculation.")
     args = args.parse_args()
 
     df = rank_solutions(
@@ -61,6 +107,7 @@ if __name__ == "__main__":
         model_prefix=args.model_prefix,
         task_prefix=args.task_prefix,
         use_gcs=args.use_gcs,
+        task_name=args.task_name,
         # fs_kwargs = {k: v for kv in args.fs_kwargs.split(",") if kv for k, v in [kv.split("=")]}
         # fs_kwargs={
         #     "project":'cmu-gpu-cloud-flame',
@@ -68,65 +115,54 @@ if __name__ == "__main__":
         #     }
         )
     print(df.head())
+    train_df = pd.DataFrame()
+    test_df = pd.DataFrame()
+    valid_df = pd.DataFrame()
+    task_df = df[df.task.str.contains(args.task_prefix)]
+    for task_name in task_df.task.unique():
+        _task_df = task_df[task_df["task"] == task_name]
+        _rank_df = _task_df.pivot_table(
+            index=["idx"],
+            columns=["model", "solve"],
+            values=["accuracy", "output_tokens"],
+            aggfunc="mean",
+        )
 
-    label_class = [
-        "Qwen-Qwen2.5-3B-Instruct-PL", # 0
-        "Qwen-Qwen2.5-3B-Instruct-NL", # 1
-        "Qwen-Qwen2.5-7B-Instruct-PL", # 2
-        "Qwen-Qwen2.5-7B-Instruct-NL", # 3
-        "Qwen-Qwen2.5-14B-Instruct-PL",# 4
-        "Qwen-Qwen2.5-14B-Instruct-NL",# 5
-        "Qwen-Qwen2.5-32B-Instruct-PL",# 6
-        "Qwen-Qwen2.5-32B-Instruct-NL",# 7
-        "Qwen-Qwen2.5-72B-Instruct-PL",# 8
-        "Qwen-Qwen2.5-72B-Instruct-NL",# 9
-    ]
-    
-    task_df = df[df.task.str.contains("math_")]
-    task_df = task_df.pivot_table(
-        index=["idx"],
-        columns=["model", "solve"],
-        values=["accuracy", "output_tokens"],
-        aggfunc="mean",
-    )
+        _task_df.reset_index(inplace=True)
 
-    #                        model solve  accuracy  output_tokens
-    # 3  Qwen-Qwen2.5-32B-Instruct    PL  1.000000     208.666667
-    # 5   Qwen-Qwen2.5-3B-Instruct    PL  1.000000     348.333333
-    # 2  Qwen-Qwen2.5-32B-Instruct    NL  1.000000     534.333333
-    # 6  Qwen-Qwen2.5-72B-Instruct    NL  1.000000     640.666667
-    # 8   Qwen-Qwen2.5-7B-Instruct    NL  1.000000     655.333333
-    # 0  Qwen-Qwen2.5-14B-Instruct    NL  1.000000     658.333333
-    # 7  Qwen-Qwen2.5-72B-Instruct    PL  0.666667     216.000000
-    # 9   Qwen-Qwen2.5-7B-Instruct    PL  0.666667     233.666667
-    # 4   Qwen-Qwen2.5-3B-Instruct    NL  0.666667     650.333333
-    # 1  Qwen-Qwen2.5-14B-Instruct    PL  0.333333     238.333333
+        rank_fn = partial(rank_model_solution_pair, lmbda=args.lmbda)
+        ranked_lists = _rank_df.apply(rank_fn, axis=1)
+        _rank_df["label"], _rank_df["rank_accuracy"], _rank_df["rank_compute"] = zip(*ranked_lists)
+        _rank_df.reset_index(inplace=True)
 
-    def rank_model_solution_pair(row):
+        _rank_df.columns = ['_'.join(filter(None, col)).strip() for col in _rank_df.columns.values]
+        _rank_df = _rank_df[['idx', 'label', 'rank_accuracy', 'rank_compute']]
+        # _rank_df["route"] = _rank_df["label"].apply(lambda x: label_class[x[0]])
+        # _rank_df["model"] = _rank_df["route"].apply(lambda x: "-".join(x.split("-")[:-1]))
+        # _rank_df["solve"] = _rank_df["route"].apply(lambda x: x.split("-")[-1])
 
-        row = row.unstack(level=0).reset_index()
-        row["size"] = row["model"].apply(lambda x: int(x.split("-")[2][:-1]))
-        row["compute"] = 2 * row["size"] * row["output_tokens"]
-        row.sort_values(by=['accuracy', 'compute'], ascending=[False, True], inplace=True)
+        _text_df = _task_df[
+            (_task_df["model"] == _task_df["model"].unique()[0])
+            & (_task_df["solve"] == "PL")
+            & (_task_df["num"] == "00")
+        ]
 
-        row["pair"] = row["model"] + "-" + row["solve"]
+        # print(_text_df.head())
+        _rank_df = _text_df[['idx', 'text']].merge(_rank_df.reset_index(drop=True)[['label', 'idx', 'rank_accuracy', 'rank_compute']], on='idx')
+        _rank_df["task"] = task_name
 
-        return [label_class.index(route_label) for route_label in row["pair"].tolist()]
-        # return row["pair"].tolist()
+        _rank_df.sample(frac=1).reset_index(drop=True)
+        task_size = len(_rank_df)
+        train_size = int(task_size * 0.8)
+        valid_size = int(task_size * 0.1)
+        test_size = int(task_size * 0.1)
+        train_df = pd.concat([train_df, _rank_df.iloc[:train_size]], ignore_index=True)
+        valid_df = pd.concat([valid_df, _rank_df.iloc[train_size:train_size + valid_size]], ignore_index=True)
+        test_df = pd.concat([test_df, _rank_df.iloc[-test_size-1:]], ignore_index=True)
 
-    # task_df[["value", "value"]] = task_df.apply(rank_model_solution_pair, axis=1)
-    task_df["rank"] = task_df.apply(rank_model_solution_pair, axis=1)
-    task_df["idx"] = task_df.index
-    # task_df[['idx', 'rank']].iloc[0]
-    task_df.columns = ['_'.join(filter(None, col)).strip() for col in task_df.columns.values]
-
-
-    merged_df = df[['idx', 'text']].merge(task_df.reset_index(drop=True)[['rank', 'idx']], on='idx')
-    merged_df.to_json()
-
-    train_df = merged_df.sample(frac=0.9, random_state=42)
-    test_df = merged_df.drop(train_df.index)
+    print(train_df.head())
 
     os.makedirs(args.output_path, exist_ok=True)
     train_df.to_json(os.path.join(args.output_path, "train.jsonl"), orient="records", lines=True)
+    valid_df.to_json(os.path.join(args.output_path, "valid.jsonl"), orient="records", lines=True)
     test_df.to_json(os.path.join(args.output_path, "test.jsonl"), orient="records", lines=True)
