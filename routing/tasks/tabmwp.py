@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from yeval.task import register_task, YevalTask
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -22,13 +23,25 @@ def tabmwp_eval(prediction, ground_truth):
     return score
 
 base_url = "https://raw.githubusercontent.com/lupantech/PromptPG/refs/heads/main/data/tabmwp/"
+for split in ["train", "test", "dev"]:
+    file_path = os.path.join(dir_path, "tabmwp/", f"problems_{split}.parquet")
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    if not os.path.exists(file_path):
+        # pd.read_json(f"{base_url}problems_{split}.json").transpose().to_json(file_path, lines=True, orient="records")
+        pd.read_json(f"{base_url}problems_{split}.json").transpose()[
+            ["question", "answer", "choices", "ques_type", "table", "grade"]
+             ].to_parquet(file_path, index=False)
+
 class TabMWPTask(YevalTask):
-    data_path="json"
+    data_path="parquet"
     data_kwargs={
         "data_files": {
-            "train": os.path.join(base_url, "problems_train.json"),
-            "test": os.path.join(base_url, "problems_test.json"),
-            "dev": os.path.join(base_url, "problems_dev.json"),
+            # "train": os.path.join(base_url, "problems_train.json"),
+            # "test": os.path.join(base_url, "problems_test.json"),
+            # "dev": os.path.join(base_url, "problems_dev.json"),
+            "train": os.path.join(dir_path, "tabmwp/", "problems_train.parquet"),
+            "test": os.path.join(dir_path, "tabmwp/", "problems_test.parquet"),
+            "dev": os.path.join(dir_path, "tabmwp/", "problems_dev.parquet"),
             }
         }
     input_text=tabmwp_input
