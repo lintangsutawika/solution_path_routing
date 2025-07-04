@@ -22,7 +22,7 @@ label_class = [
     "Qwen-Qwen2.5-72B-Instruct-NL",# 9
 ]
 
-def rank_model_solution_pair(row, lmbda=0.1, score_fn=None):
+def rank_model_solution_pair(row, coeff=1.0, score_fn=None):
 
     row = row.unstack(level=0).reset_index()
     row["size"] = row["model"].apply(lambda x: int(x.split("-")[2][:-1]))
@@ -33,7 +33,8 @@ def rank_model_solution_pair(row, lmbda=0.1, score_fn=None):
         row["score"] = score_fn(row)
     else:
         # row["score"] = row["accuracy"] / (lmbda * np.log10(row["compute"]))
-        row["score"] = np.log10(1+row["accuracy"]/(row["compute"]**lmbda))
+        # row["score"] = np.log10(1+row["accuracy"]/(row["compute"]**lmbda))
+        row["score"] = coeff*row['accuracy'] - np.log10(row['compute'])
 
     row.sort_values(by=['score'], ascending=[False], inplace=True)
     # row.sort_values(by=['accuracy', 'compute'], ascending=[False, True], inplace=True)
@@ -49,7 +50,7 @@ def rank_model_solution_pair(row, lmbda=0.1, score_fn=None):
 
     # return row["pair"].tolist()
 
-def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, task_name=False, fs_kwargs={}):
+def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, task_name=False, fs_kwargs={}, save_path=None):
 
     if use_gcs:
         fs = fsspec.filesystem('gcs', **fs_kwargs)
@@ -67,7 +68,9 @@ def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, task
         if model_prefix not in solution:
             continue
 
-        model_name, task_name, solve, num = solution.split(":")
+        if solution[-3] == ":":
+            continue
+        model_name, task_name, solve, prompt, num = solution.split(":")
 
         with fs.open(os.path.join(solution_path, solution, "output.jsonl"), 'r') as f:
             file_df = pd.read_json(f, lines=True)
@@ -80,10 +83,15 @@ def rank_solutions(solution_path, model_prefix, task_prefix, use_gcs=False, task
             df["task"] = task_name
             df["model"] = model_name
             df["solve"] = solve
+            df["prompt"] = prompt
             df["num"] = num
             df["size"] = int([m[:-1] for m in model_name.split("-") if m[0].isdigit()][0])
 
         solution_df = pd.concat([solution_df, df], ignore_index=True)
+
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        solution_df.to_json(save_path, orient="records", lines=True)
 
     return solution_df
 
@@ -97,23 +105,29 @@ if __name__ == "__main__":
     args.add_argument("--save_model_path", type=str, default=None, help="Path to save the model.")
     args.add_argument("--fs_kwargs", type=str, default="", help="Comma-separated key=value pairs for filesystem kwargs.")
     args.add_argument("--use_gcs", action="store_true", help="Flag to indicate whether to use Google Cloud Storage.")
-    args.add_argument("--task_name", action="store_true", help="Flag to indicate whether to use Google Cloud Storage.")
-    args.add_argument("--lmbda", type=float, default=0.1, help="Lambda value for ranking score calculation.")
+    args.add_argument("--task_name", type=str, help="Flag to indicate whether to use Google Cloud Storage.")
+    args.add_argument("--coeff", type=float, default=0.1, help="Lambda value for ranking score calculation.")
+    args.add_argument("--save_df_path", type=str, default=None, help="Path to save the DataFrame.")
     args = args.parse_args()
 
-    df = rank_solutions(
-        # "gs://cmu-gpucloud-lsutawik/spr/solve_set_train",
-        args.data_path,
-        model_prefix=args.model_prefix,
-        task_prefix=args.task_prefix,
-        use_gcs=args.use_gcs,
-        task_name=args.task_name,
-        # fs_kwargs = {k: v for kv in args.fs_kwargs.split(",") if kv for k, v in [kv.split("=")]}
-        # fs_kwargs={
-        #     "project":'cmu-gpu-cloud-flame',
-        #     "token":'/home/lsutawik/.config/gcloud/application_default_credentials.json'
-        #     }
-        )
+    if (args.save_df_path is not None) and (os.path.exists(args.save_df_path)):
+        print(f"DataFrame already exists at {args.save_df_path}. Loading from there.")
+        df = pd.read_json(args.save_df_path, lines=True)
+    else:
+        df = rank_solutions(
+            # "gs://cmu-gpucloud-lsutawik/spr/solve_set_train",
+            args.data_path,
+            model_prefix=args.model_prefix,
+            task_prefix=args.task_prefix,
+            use_gcs=args.use_gcs,
+            task_name=args.task_name,
+            save_path=args.save_df_path,
+            # fs_kwargs = {k: v for kv in args.fs_kwargs.split(",") if kv for k, v in [kv.split("=")]}
+            # fs_kwargs={
+            #     "project":'cmu-gpu-cloud-flame',
+            #     "token":'/home/lsutawik/.config/gcloud/application_default_credentials.json'
+            #     }
+            )
     print(df.head())
     train_df = pd.DataFrame()
     test_df = pd.DataFrame()
@@ -130,7 +144,7 @@ if __name__ == "__main__":
 
         _task_df.reset_index(inplace=True)
 
-        rank_fn = partial(rank_model_solution_pair, lmbda=args.lmbda)
+        rank_fn = partial(rank_model_solution_pair, coeff=args.coeff)
         ranked_lists = _rank_df.apply(rank_fn, axis=1)
         _rank_df["label"], _rank_df["rank_accuracy"], _rank_df["rank_compute"] = zip(*ranked_lists)
         _rank_df.reset_index(inplace=True)
@@ -144,7 +158,8 @@ if __name__ == "__main__":
         _text_df = _task_df[
             (_task_df["model"] == _task_df["model"].unique()[0])
             & (_task_df["solve"] == "PL")
-            & (_task_df["num"] == "00")
+            & (_task_df["prompt"] == 0)
+            & (_task_df["num"] == 0)
         ]
 
         # print(_text_df.head())
