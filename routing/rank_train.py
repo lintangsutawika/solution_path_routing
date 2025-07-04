@@ -1,3 +1,4 @@
+import os
 import sys
 import random
 import argparse
@@ -18,8 +19,7 @@ from transformers import (
     )
 
 from allrank.models.losses import lambdaLoss
-from pytorchltr.loss import LambdaARPLoss1, LambdaNDCGLoss1, LambdaNDCGLoss2
-from pytorchltr.evaluation import ndcg
+from sklearn.metrics import ndcg_score
 
 # def compute_loss_func(outputs, labels, **kwargs):
 
@@ -91,6 +91,7 @@ rank_type = {
     "linear_softmax": {"score": torch.FloatTensor(sorted(list(range(10)), reverse=True))/10.0, "use_softmax": True},
     "softmax": {"score": torch.FloatTensor(sorted(list(range(10)), reverse=True)), "use_softmax": True},
     "top3": {"score": torch.tensor([1,1,1,0,0,0,0,0,0,0], dtype=torch.float)},
+    "top3_rank": {"score": torch.tensor([3,2,1,0,0,0,0,0,0,0], dtype=torch.float)},
 }
 
 
@@ -136,25 +137,22 @@ def main(args):
     def compute_metrics(pred):
 
         predictions, labels  = pred.predictions, pred.label_ids
-        predictions = torch.tensor(predictions).to(labels.device)
-        labels = torch.tensor(labels).to(predictions.device)
+        predictions = torch.tensor(predictions) # .to(labels.device)
+        labels = torch.tensor(labels) # .to(predictions.device)
         bs, n = labels.shape
         n_size = torch.tensor([n]*bs)
 
-        # score = torch.tensor([9,8,7,6,5,4,3,2,1,0], dtype=torch.float)
+        score = torch.tensor([9,8,7,6,5,4,3,2,1,0], dtype=torch.float)
         # score = torch.tensor([5,4,3,2,1,0,0,0,0,0], dtype=torch.float)
-        score = torch.tensor([1,1,1,0,0,0,0,0,0,0], dtype=torch.float)
-        relevance = torch.zeros_like(labels, dtype=torch.float)
+        # score = torch.tensor([1,1,1,0,0,0,0,0,0,0], dtype=torch.float)
         # relevance = rank_fn(labels)
-
-        for i in range(labels.size(0)):
-            relevance[i][labels[i]] = score
+        relevance = rank_to_relevance(labels, score=score)
 
         top_prediction = predictions.argmax(axis=1)
         top_label = labels[:, :1]
         
-        precision = torch.zeros((1, 10), dtype=torch.float).to(predictions.device)
-        recall = torch.zeros((1, 10), dtype=torch.float).to(predictions.device)
+        precision = torch.zeros((1, 10), dtype=torch.float) #.to(predictions.device)
+        recall = torch.zeros((1, 10), dtype=torch.float) #.to(predictions.device)
         for _class in range(10):
             true_positive = ((top_prediction == _class) & (top_label.squeeze() == _class)).float().sum()
             predicted_positive = (top_prediction == _class).float().sum()
@@ -168,9 +166,9 @@ def main(args):
         f1_score = 2 * (precision * recall) / (precision + recall)
         # accuracy = (top_prediction == top_label.squeeze()).float().mean().item()
 
-        ndcg_1 = ndcg(predictions, relevance, n_size, k=1, exp=False).mean().item()
-        ndcg_2 = ndcg(predictions, relevance, n_size, k=2, exp=False).mean().item()
-        ndcg_3 = ndcg(predictions, relevance, n_size, k=3, exp=False).mean().item()
+        ndcg_1 = ndcg_score(relevance, predictions, k=1)
+        ndcg_2 = ndcg_score(relevance, predictions, k=2)
+        ndcg_3 = ndcg_score(relevance, predictions, k=3)
         # ndcg_4 = ndcg(predictions, relevance, n_size, k=4, exp=False).mean().item()
         # ndcg_10 = ndcg(predictions, relevance, n_size, k=10, exp=False).mean().item()
 
@@ -181,15 +179,18 @@ def main(args):
             'NDCG@3': ndcg_3,
             'Metric': (f1_score + ndcg_1 * 0.5 + ndcg_2 * 0.3 + ndcg_3 * 0.2) / 2,
         }
+    
+    os.environ["WANDB_PROJECT"]=args.project_name
 
     # Define training arguments
     training_args = TrainingArguments(
+        run_name=args.run_name,
         torch_compile=True,
         torch_compile_backend="inductor",
         torch_compile_mode="default",
         output_dir=args.output_dir,
         eval_strategy="steps",
-        max_steps=5_000,
+        max_steps=args.max_steps,
         eval_steps=128,
         save_strategy="steps",
         save_steps=128,
@@ -244,10 +245,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a sequence classification model.")
+    parser.add_argument("--project_name", type=str, default="rank_train", help="Project name for logging")
+    parser.add_argument("--run_name", type=str, default="rank_train", help="Project name for logging")
     parser.add_argument("--rank_type", type=str, default=None, help="Directory containing the dataset")
     parser.add_argument("--data_dir", type=str, required=True, help="Directory containing the dataset")
     parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", help="Pretrained model name")
     parser.add_argument("--num_labels", type=int, default=10, help="Number of labels for classification")
+    parser.add_argument("--max_steps", type=int, default=20_000, help="Maximum number of training steps")
     parser.add_argument("--train_subset_size", type=int, default=8192, help="Subset size for training")
     parser.add_argument("--test_subset_size", type=int, default=128, help="Subset size for testing")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for shuffling")
